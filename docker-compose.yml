@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oficina_postgres
+    environment:
+      POSTGRES_DB: oficina_pro
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: oficina_api
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/oficina_pro
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+
+  admin-web:
+    build:
+      context: .
+      dockerfile: apps/admin-web/Dockerfile
+    container_name: oficina_admin_web
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+  client-portal:
+    build:
+      context: .
+      dockerfile: apps/client-portal/Dockerfile
+    container_name: oficina_client_portal
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3001:3000"
+
+volumes:
+  postgres_data:
