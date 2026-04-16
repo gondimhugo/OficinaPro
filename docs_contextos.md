@@ -125,3 +125,168 @@ flowchart LR
 - Quebra de contrato: publicar nova versão (`*.v2`) sem remover `v1` até migração completa.
 - Campos novos: sempre opcionais por default na mesma versão.
 - Consumidores devem ser tolerantes a campos desconhecidos.
+
+
+---
+
+## 7) Matriz de autorização (Perfil × Ação × Recurso × Escopo)
+
+### 7.1 Perfis considerados
+- **Atendente**
+- **Consultor comercial**
+- **Técnico**
+- **Almoxarife/Comprador**
+- **Financeiro**
+- **Gerente de unidade**
+- **Controller/Administrador global**
+
+### 7.2 Convenções
+- Ações: `criar`, `aprovar`, `editar_valor`, `cancelar`, `estornar`, `visualizar`.
+- Recursos: `orcamento`, `os`, `compra`, `lancamento_financeiro`, `foto`.
+- Escopos:
+  - **proprio**: somente registros criados/atribuídos ao próprio usuário.
+  - **unidade**: qualquer registro da mesma unidade do usuário.
+  - **global**: qualquer unidade (multi-filial).
+- Notação da matriz:
+  - ✅ permitido
+  - 🔒 negado
+  - ⚠️ permitido com regra ABAC complementar
+
+### 7.3 Matriz consolidada
+
+| Perfil \ Recurso/Ação | criar | aprovar | editar_valor | cancelar | estornar | visualizar |
+|---|---:|---:|---:|---:|---:|---:|
+| **Atendente → orçamento** | ✅ (proprio) | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade) |
+| **Atendente → OS** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade) |
+| **Atendente → compra** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade) |
+| **Atendente → lançamento financeiro** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (proprio/unidade restrito) |
+| **Atendente → foto** | ✅ (proprio) | n/a | 🔒 | ✅ (proprio, antes de vincular) | 🔒 | ✅ (unidade) |
+| **Consultor comercial → orçamento** | ✅ (proprio/unidade) | ⚠️ (unidade) | ⚠️ (proprio/unidade) | ⚠️ (proprio/unidade) | 🔒 | ✅ (unidade) |
+| **Consultor comercial → OS** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade) |
+| **Consultor comercial → compra** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade) |
+| **Consultor comercial → lançamento financeiro** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade, leitura comercial) |
+| **Consultor comercial → foto** | ✅ (proprio/unidade) | n/a | 🔒 | ✅ (proprio) | 🔒 | ✅ (unidade) |
+| **Técnico → orçamento** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (proprio/unidade) |
+| **Técnico → OS** | ✅ (proprio atribuído) | ⚠️ (proprio atribuído) | 🔒 | ⚠️ (proprio atribuído) | 🔒 | ✅ (proprio/unidade) |
+| **Técnico → compra** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (proprio/unidade) |
+| **Técnico → lançamento financeiro** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
+| **Técnico → foto** | ✅ (proprio/OS atribuída) | n/a | 🔒 | ✅ (proprio) | 🔒 | ✅ (proprio/unidade) |
+| **Almoxarife/Comprador → orçamento** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade) |
+| **Almoxarife/Comprador → OS** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade) |
+| **Almoxarife/Comprador → compra** | ✅ (unidade) | ⚠️ (unidade) | ⚠️ (unidade) | ⚠️ (unidade) | 🔒 | ✅ (unidade) |
+| **Almoxarife/Comprador → lançamento financeiro** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade, somente títulos de compra) |
+| **Almoxarife/Comprador → foto** | ✅ (unidade) | n/a | 🔒 | ✅ (proprio) | 🔒 | ✅ (unidade) |
+| **Financeiro → orçamento** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade/global) |
+| **Financeiro → OS** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade/global) |
+| **Financeiro → compra** | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | ✅ (unidade/global) |
+| **Financeiro → lançamento financeiro** | ✅ (unidade) | ⚠️ (unidade/global) | ⚠️ (unidade/global) | ⚠️ (unidade/global) | ⚠️ (unidade/global) | ✅ (unidade/global) |
+| **Financeiro → foto** | 🔒 | n/a | 🔒 | 🔒 | 🔒 | ✅ (unidade/global) |
+| **Gerente de unidade → orçamento** | ✅ (unidade) | ✅ (unidade) | ✅ (unidade) | ✅ (unidade) | 🔒 | ✅ (unidade) |
+| **Gerente de unidade → OS** | ✅ (unidade) | ✅ (unidade) | 🔒 | ✅ (unidade) | 🔒 | ✅ (unidade) |
+| **Gerente de unidade → compra** | ✅ (unidade) | ✅ (unidade) | ✅ (unidade) | ✅ (unidade) | 🔒 | ✅ (unidade) |
+| **Gerente de unidade → lançamento financeiro** | ✅ (unidade) | ✅ (unidade) | ✅ (unidade) | ✅ (unidade) | ✅ (unidade, com justificativa) | ✅ (unidade) |
+| **Gerente de unidade → foto** | ✅ (unidade) | n/a | 🔒 | ✅ (unidade) | 🔒 | ✅ (unidade) |
+| **Controller/Administrador global → orçamento** | ✅ (global) | ✅ (global) | ✅ (global) | ✅ (global) | ✅ (global, exceção) | ✅ (global) |
+| **Controller/Administrador global → OS** | ✅ (global) | ✅ (global) | 🔒 | ✅ (global) | ✅ (global, exceção) | ✅ (global) |
+| **Controller/Administrador global → compra** | ✅ (global) | ✅ (global) | ✅ (global) | ✅ (global) | ✅ (global, exceção) | ✅ (global) |
+| **Controller/Administrador global → lançamento financeiro** | ✅ (global) | ✅ (global) | ✅ (global) | ✅ (global) | ✅ (global) | ✅ (global) |
+| **Controller/Administrador global → foto** | ✅ (global) | n/a | 🔒 | ✅ (global) | 🔒 | ✅ (global) |
+
+> `n/a` = ação não aplicável ao recurso.
+
+### 7.4 Regras ABAC complementares (policy conditions)
+
+Aplicar as regras abaixo após o RBAC/perfil básico (modelo híbrido RBAC + ABAC):
+
+1. **Aprovação por alçada de valor (orçamento/compra/lançamento financeiro)**
+   - Se `valor <= limite_aprovacao_usuario`: permite aprovação por perfil habilitado.
+   - Se `valor > limite_aprovacao_usuario`: exige perfil **Gerente de unidade** ou superior.
+   - Se `valor > limite_aprovacao_gerente`: exige **Controller/Administrador global**.
+
+2. **Edição de valor após aprovação**
+   - Permitida somente se `status in {RASCUNHO, EM_REVISAO}`.
+   - Se `status = APROVADO`, só pode com `motivo_reabertura` + nova trilha de aprovação.
+
+3. **Cancelamento/estorno fora da janela operacional**
+   - Se `now - created_at > janela_cancelamento_horas` => somente gerente ou controller.
+   - Estorno financeiro exige sempre `justificativa` e `referencia_lancamento_origem`.
+
+4. **Restrição por vínculo do registro**
+   - Escopo `proprio` só libera quando `owner_id == user_id` ou `responsavel_id == user_id`.
+   - Escopo `unidade` só libera quando `registro.unidade_id in user.unidades_permitidas`.
+
+5. **Separação de funções (SoD)**
+   - Usuário que **criou** não pode **aprovar** o mesmo `orcamento`, `compra` ou `lancamento_financeiro`, salvo exceção explícita de emergência auditada.
+
+6. **Bloqueio por status final**
+   - Registros em `CANCELADO`, `ESTORNADO` ou `FECHADO` são apenas leitura; alterações só via operação administrativa excepcional.
+
+---
+
+## 8) Padronização de middleware de autorização (backend)
+
+### 8.1 Contrato único de autorização
+Implementar middleware/pipeline único para todos os módulos, com assinatura conceitual:
+
+```text
+authorize(user, action, resource, resourceContext) -> AuthorizationDecision
+```
+
+Onde:
+- `user`: identidade autenticada + papéis + atributos (unidades, limites de alçada, flags).
+- `action`: uma das ações padronizadas (`criar|aprovar|editar_valor|cancelar|estornar|visualizar`).
+- `resource`: tipo de recurso (`orcamento|os|compra|lancamento_financeiro|foto`).
+- `resourceContext`: dono, unidade, valor, status, timestamps, etc.
+- `AuthorizationDecision`: `{ allow: boolean, reasonCode: string, obligations?: {...} }`.
+
+### 8.2 Ordem de avaliação recomendada
+1. **Autenticação válida**.
+2. **Permissão RBAC** (perfil × ação × recurso).
+3. **Escopo** (`proprio|unidade|global`).
+4. **Regras ABAC** (alçada, SoD, status, janela temporal).
+5. **Obrigações** (ex.: exigir justificativa).
+6. **Decisão final** (allow/deny + reasonCode padronizado).
+
+### 8.3 Reason codes padronizados
+- `AUTH_DENY_ROLE`
+- `AUTH_DENY_SCOPE`
+- `AUTH_DENY_LIMIT`
+- `AUTH_DENY_SOD`
+- `AUTH_DENY_STATUS`
+- `AUTH_DENY_TIME_WINDOW`
+- `AUTH_DENY_MISSING_JUSTIFICATION`
+
+---
+
+## 9) Auditoria obrigatória para tentativa negada
+
+Toda decisão `deny` do middleware deve gerar evento de auditoria imutável:
+
+### 9.1 Evento `AutorizacaoNegadaRegistrada.v1`
+Campos mínimos:
+- `auditId` (UUID)
+- `occurredAt` (UTC)
+- `tenantId`
+- `userId`
+- `userRoles[]`
+- `action`
+- `resource`
+- `resourceId` (quando houver)
+- `unidadeId`
+- `decision = DENY`
+- `reasonCode`
+- `policyVersion`
+- `correlationId` / `traceId`
+- `ipOrigem`, `userAgent` (quando disponível)
+- `metadata` (valor, status, owner, etc.)
+
+### 9.2 Requisitos de implementação
+- Registro de auditoria **não bloqueante** para resposta da API (usar fila/outbox quando necessário).
+- Persistência WORM/log imutável (sem update/delete funcional).
+- Indexação mínima para investigação: `occurredAt`, `userId`, `resource`, `reasonCode`, `unidadeId`.
+- Dashboard de segurança com alertas para negações repetidas por usuário/recurso.
+
+### 9.3 Observabilidade
+- Métricas: `auth_allow_total`, `auth_deny_total{reasonCode,...}`.
+- Tracing: span `authorization.evaluate` com tags de `action`, `resource`, `decision`.
+- SLO recomendado: latência p95 da autorização < 20ms em cache quente.
