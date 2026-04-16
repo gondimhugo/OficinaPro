@@ -83,3 +83,42 @@ stateDiagram-v2
   - dispara side effects de notificação e atualização de portal.
 
 Esse padrão centraliza regra de negócio e evita inconsistências entre diferentes endpoints da API.
+
+
+## 4) Ciclo de vida de item vinculado à OS
+
+```mermaid
+stateDiagram-v2
+    [*] --> NAO_PLANEJADO
+    NAO_PLANEJADO --> PREVISTO_ORCAMENTO: prever_no_orcamento
+    PREVISTO_ORCAMENTO --> RESERVADO_OS: reservar_na_conversao_os
+    RESERVADO_OS --> REQUISICAO_COMPRA: gerar_requisicao_compra
+    REQUISICAO_COMPRA --> RECEBIDO_CONFERIDO: receber_e_conferir
+    RESERVADO_OS --> CONSUMO_REAL: baixar_consumo_etapa
+    RECEBIDO_CONFERIDO --> CONSUMO_REAL: baixar_consumo_etapa
+```
+
+### Matriz de transições de item OS
+
+| De | Para | Evento disparador | Perfis autorizados | Pré-condições | Pós-condições |
+|---|---|---|---|---|---|
+| NAO_PLANEJADO | PREVISTO_ORCAMENTO | `prever_no_orcamento` | planejador, orcamentista, admin | item e quantidade definidos | item previsto no orçamento |
+| PREVISTO_ORCAMENTO | RESERVADO_OS | `reservar_na_conversao_os` | planejador, estoque, admin | vínculo de `os_id` obrigatório (ou exceção auditada) | quantidade reservada para a OS |
+| RESERVADO_OS | REQUISICAO_COMPRA | `gerar_requisicao_compra` | compras, estoque, admin | saldo insuficiente com `purchase_request_id` gerado | requisição de compra formalizada |
+| REQUISICAO_COMPRA | RECEBIDO_CONFERIDO | `receber_e_conferir` | almoxarife, compras, qualidade, admin | recebimento físico com conferência aprovada | lote apto para consumo |
+| RESERVADO_OS / RECEBIDO_CONFERIDO | CONSUMO_REAL | `baixar_consumo_etapa` | tecnico, supervisor, admin | vínculo de `os_id` obrigatório (ou exceção auditada) | baixa real por etapa (`step_id`) |
+
+### Regras de consistência obrigatórias
+
+- Consumo sem vínculo de OS deve ser bloqueado por padrão.
+- Exceção só é permitida com `allow_unlinked_consumption=true` e `exception_audit_id` obrigatório.
+- Toda baixa real grava apontamento por etapa para permitir rastreio do consumo técnico.
+
+### Reconciliação periódica (saldo físico x sistema x consumo)
+
+- Job periódico deve comparar:
+  - `physical_balance` (contagem física),
+  - `system_balance` (saldo no ERP),
+  - `consumed_total` (somatório de baixas por etapa).
+- Fórmula de validação usada no domínio: `expected_system_balance = physical_balance - consumed_total`.
+- Divergência acima da tolerância gera falha de reconciliação e abertura de tratativa operacional.
