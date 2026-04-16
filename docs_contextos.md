@@ -290,3 +290,55 @@ Campos mínimos:
 - Métricas: `auth_allow_total`, `auth_deny_total{reasonCode,...}`.
 - Tracing: span `authorization.evaluate` com tags de `action`, `resource`, `decision`.
 - SLO recomendado: latência p95 da autorização < 20ms em cache quente.
+
+---
+
+## 9) Modelo de auditoria (imutável e obrigatório para ações sensíveis)
+
+### 9.1 Estrutura mínima do evento de auditoria
+
+Todo evento de auditoria deve conter os campos abaixo:
+
+- `actor_id` (ator)
+- `actor_role` (papel)
+- `resource_type` + `resource_id` (recurso)
+- `action` (ação)
+- `before` / `after` (antes/depois)
+- `timestamp_utc` (UTC)
+- `ip_address` + `device_id` (IP/device)
+- `correlation_id` (correlação de requisição)
+- `metadata` (contexto adicional: por exemplo `os_id`, `event`)
+
+### 9.2 Eventos sensíveis com registro obrigatório
+
+Os seguintes eventos são classificados como sensíveis e **devem** gerar auditoria:
+
+- aprovação/rejeição (`aprovacao`, `rejeicao`)
+- alteração de valores (`alteracao_valor`)
+- estornos (`estorno`)
+- fechamento de caixa (`fechamento_caixa`)
+- mudança de status de OS (`mudanca_status_os`)
+- upload/remoção de fotos (`upload_foto`, `remocao_foto`)
+
+Se uma ação sensível ocorrer sem `audit_store` imutável disponível, a operação deve falhar.
+
+### 9.3 Retenção e consulta
+
+- **Retenção padrão**: 3.650 dias (~10 anos), configurável por política.
+- **Expurgo**: processo administrativo/sistêmico baseado em `timestamp_utc` e política de retenção.
+- **Consulta**: filtros mínimos obrigatórios:
+  - por OS (`os_id`)
+  - por usuário (`actor_id`)
+  - por período (`start_utc`, `end_utc`)
+
+### 9.4 Imutabilidade e segregação de funções
+
+- Log é **append-only** (somente inserção).
+- Operações de `update` e `delete` são proibidas.
+- Escrita no log só por identidades técnicas (`system`/`service`).
+- Usuários de negócio não podem editar, sobrescrever nem remover eventos.
+
+### 9.5 Aplicação no backend
+
+- Máquina de estados deve registrar auditoria textual e estruturada.
+- Em transições sensíveis (ex.: mudança de status da OS, aprovação/rejeição de orçamento), o backend deve validar a presença do `audit_store` imutável antes de concluir a transição.

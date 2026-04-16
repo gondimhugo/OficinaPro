@@ -1,5 +1,6 @@
 import unittest
 
+from backend.audit import AuditError, ImmutableAuditLogStore
 from backend.state_transitions import (
     PreconditionError,
     TransitionError,
@@ -61,7 +62,15 @@ class OSValidatorTests(unittest.TestCase):
             target_state="EM_EXECUCAO",
             event="iniciar_execucao",
             profile="supervisor",
-            context={"budget_approved": True},
+            context={
+                "budget_approved": True,
+                "audit_store": ImmutableAuditLogStore(),
+                "actor_id": "u-1",
+                "os_id": "OS-1",
+                "correlation_id": "req-1",
+                "ip_address": "127.0.0.1",
+                "device_id": "device-1",
+            },
         )
 
         self.assertEqual(result["state"], "EM_EXECUCAO")
@@ -77,6 +86,18 @@ class OSValidatorTests(unittest.TestCase):
                 event="encerrar_os",
                 profile="admin",
                 context={"budget_approved": True},
+            )
+
+    def test_requires_audit_for_sensitive_budget_approval(self):
+        validator = budget_validator()
+
+        with self.assertRaises(AuditError):
+            validator.apply(
+                current_state="ENVIADO",
+                target_state="APROVADO",
+                event="aprovar_orcamento",
+                profile="admin",
+                context={},
             )
 
 
