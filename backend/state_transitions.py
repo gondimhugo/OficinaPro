@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Callable, Dict, Iterable, Mapping, MutableMapping, Sequence, Tuple
+
+from backend.audit import (
+    AuditError,
+    ImmutableAuditLogStore,
+    build_audit_event,
+    map_transition_to_audit_action,
+    should_require_audit,
+)
 
 
 class TransitionError(ValueError):
@@ -75,6 +84,13 @@ class TransitionValidator:
             context,
             f"Transição {self.entity_name}: {current_state} -> {target_state} ({event})",
         )
+        self._append_structured_audit(
+            context=context,
+            current_state=current_state,
+            target_state=target_state,
+            event=event,
+            profile=profile,
+        )
 
         for post in rule.postconditions:
             post(context)
@@ -82,6 +98,44 @@ class TransitionValidator:
             effect(context)
 
         return context
+
+    def _append_structured_audit(
+        self,
+        context: MutableMapping[str, object],
+        current_state: str,
+        target_state: str,
+        event: str,
+        profile: str,
+    ) -> None:
+        action = map_transition_to_audit_action(self.entity_name, event)
+        store = context.get("audit_store")
+        if should_require_audit(action) and not isinstance(store, ImmutableAuditLogStore):
+            raise AuditError(
+                f"Ação sensível '{action}' exige audit_store imutável no contexto"
+            )
+
+        if not isinstance(store, ImmutableAuditLogStore):
+            return
+
+        payload = {
+            "actor_id": context.get("actor_id", "desconhecido"),
+            "actor_role": profile,
+            "resource_type": self.entity_name,
+            "resource_id": str(context.get("resource_id", context.get("os_id", "na"))),
+            "action": action,
+            "before": {"state": current_state},
+            "after": {"state": target_state},
+            "timestamp_utc": context.get("timestamp_utc", datetime.now(timezone.utc)),
+            "ip_address": context.get("ip_address", "0.0.0.0"),
+            "device_id": context.get("device_id", "desconhecido"),
+            "correlation_id": context.get("correlation_id", "na"),
+            "metadata": {
+                "event": event,
+                "os_id": context.get("os_id"),
+            },
+        }
+        event_data = build_audit_event(payload)
+        store.append(event_data, principal_type="system")
 
     @staticmethod
     def _append_audit(context: MutableMapping[str, object], message: str) -> None:
