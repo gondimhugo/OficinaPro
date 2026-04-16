@@ -27,6 +27,10 @@ class PreconditionError(TransitionError):
     """Pré-condição não atendida."""
 
 
+class ReconciliationError(TransitionError):
+    """Divergências detectadas em reconciliação de estoque."""
+
+
 Precondition = Callable[[Mapping[str, object]], bool]
 Hook = Callable[[MutableMapping[str, object]], None]
 
@@ -152,6 +156,23 @@ def must_have_items_and_customer(context: Mapping[str, object]) -> bool:
     return bool(context.get("has_valid_items") and context.get("has_customer"))
 
 
+def must_have_os_link_or_audited_exception(context: Mapping[str, object]) -> bool:
+    if context.get("os_id"):
+        return True
+    return bool(context.get("allow_unlinked_consumption") and context.get("exception_audit_id"))
+
+
+def must_have_available_balance_or_purchase_request(context: Mapping[str, object]) -> bool:
+    requested_qty = int(context.get("requested_qty", 0))
+    available_qty = int(context.get("available_qty", 0))
+    purchase_request_id = context.get("purchase_request_id")
+    return requested_qty <= available_qty or bool(purchase_request_id)
+
+
+def must_have_received_and_inspected(context: Mapping[str, object]) -> bool:
+    return bool(context.get("received_qty", 0) > 0 and context.get("inspection_ok"))
+
+
 def mark_portal_sync(context: MutableMapping[str, object]) -> None:
     context["portal_synced"] = True
 
@@ -164,6 +185,27 @@ def mark_notification(context: MutableMapping[str, object]) -> None:
 
 def mark_os_created(context: MutableMapping[str, object]) -> None:
     context["os_created"] = True
+
+
+def reserve_item_quantity(context: MutableMapping[str, object]) -> None:
+    requested_qty = int(context.get("requested_qty", 0))
+    context["reserved_qty"] = requested_qty
+
+
+def register_purchase_request(context: MutableMapping[str, object]) -> None:
+    if context.get("purchase_request_id"):
+        context["purchase_requested"] = True
+
+
+def register_real_consumption(context: MutableMapping[str, object]) -> None:
+    step_consumptions = context.setdefault("step_consumptions", [])
+    if not isinstance(step_consumptions, list):
+        step_consumptions = []
+        context["step_consumptions"] = step_consumptions
+
+    step_id = context.get("step_id", "etapa-nao-informada")
+    consumed_qty = int(context.get("consumed_qty", 0))
+    step_consumptions.append({"step_id": step_id, "consumed_qty": consumed_qty})
 
 
 def budget_validator() -> TransitionValidator:
@@ -278,3 +320,75 @@ def os_validator() -> TransitionValidator:
         ),
     }
     return TransitionValidator(entity_name="OS", rules=rules)
+
+
+def os_item_lifecycle_validator() -> TransitionValidator:
+    """Fluxo de materiais vinculados à OS: previsão, reserva, compra, recebimento e consumo."""
+
+    rules: Dict[Tuple[str, str], TransitionRule] = {
+        ("NAO_PLANEJADO", "PREVISTO_ORCAMENTO"): TransitionRule(
+            event="prever_no_orcamento",
+            allowed_profiles=("planejador", "orcamentista", "admin"),
+        ),
+        ("PREVISTO_ORCAMENTO", "RESERVADO_OS"): TransitionRule(
+            event="reservar_na_conversao_os",
+            allowed_profiles=("planejador", "estoque", "admin"),
+            preconditions=(must_have_os_link_or_audited_exception,),
+            postconditions=(reserve_item_quantity,),
+        ),
+        ("RESERVADO_OS", "REQUISICAO_COMPRA"): TransitionRule(
+            event="gerar_requisicao_compra",
+            allowed_profiles=("compras", "estoque", "admin"),
+            preconditions=(must_have_available_balance_or_purchase_request,),
+            postconditions=(register_purchase_request,),
+        ),
+        ("REQUISICAO_COMPRA", "RECEBIDO_CONFERIDO"): TransitionRule(
+            event="receber_e_conferir",
+            allowed_profiles=("almoxarife", "compras", "qualidade", "admin"),
+            preconditions=(must_have_received_and_inspected,),
+        ),
+        ("RESERVADO_OS", "CONSUMO_REAL"): TransitionRule(
+            event="baixar_consumo_etapa",
+            allowed_profiles=("tecnico", "supervisor", "admin"),
+            preconditions=(must_have_os_link_or_audited_exception,),
+            postconditions=(register_real_consumption,),
+        ),
+        ("RECEBIDO_CONFERIDO", "CONSUMO_REAL"): TransitionRule(
+            event="baixar_consumo_etapa",
+            allowed_profiles=("tecnico", "supervisor", "admin"),
+            preconditions=(must_have_os_link_or_audited_exception,),
+            postconditions=(register_real_consumption,),
+        ),
+    }
+
+    return TransitionValidator(entity_name="ItemOS", rules=rules)
+
+
+def reconcile_inventory(
+    *,
+    physical_balance: int,
+    system_balance: int,
+    consumed_total: int,
+    tolerance: int = 0,
+) -> Dict[str, object]:
+    """Reconcilia saldo físico, saldo no sistema e consumo apontado por etapa."""
+
+    expected_system_balance = physical_balance - consumed_total
+    delta = system_balance - expected_system_balance
+    is_consistent = abs(delta) <= tolerance
+
+    result: Dict[str, object] = {
+        "physical_balance": physical_balance,
+        "system_balance": system_balance,
+        "consumed_total": consumed_total,
+        "expected_system_balance": expected_system_balance,
+        "delta": delta,
+        "is_consistent": is_consistent,
+    }
+
+    if not is_consistent:
+        raise ReconciliationError(
+            "Reconciliação inconsistente: saldo físico, saldo sistema e consumo apontado divergem"
+        )
+
+    return result

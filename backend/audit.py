@@ -46,6 +46,8 @@ SENSITIVE_ACTIONS = {
     "mudanca_status_os",
     "upload_foto",
     "remocao_foto",
+    "consumo_sem_os_exception",
+    "reconciliacao_estoque",
 }
 
 
@@ -144,6 +146,10 @@ def should_require_audit(action: str) -> bool:
 def map_transition_to_audit_action(entity_name: str, event: str) -> str:
     if entity_name == "OS":
         return "mudanca_status_os"
+    if entity_name == "ItemOS":
+        if event == "baixar_consumo_etapa":
+            return "consumo_sem_os_exception"
+        return "reconciliacao_estoque"
     if event == "aprovar_orcamento":
         return "aprovacao"
     if event == "rejeitar_orcamento":
