@@ -6,6 +6,9 @@ __pycache__
 *.pyc
 .venv
 .env
+.env.local
+.env.*.local
+tsconfig.tsbuildinfo
 apps/api/alembic.ini
 apps/api/oficina_api.egg-info/
 
