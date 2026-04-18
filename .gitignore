@@ -7,3 +7,8 @@ __pycache__
 .venv
 .env
 apps/api/alembic.ini
+apps/api/oficina_api.egg-info/
+
+# Supabase CLI (arquivos locais/temporários)
+supabase/.branches
+supabase/.temp
