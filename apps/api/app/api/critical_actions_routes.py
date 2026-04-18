@@ -33,9 +33,7 @@ def audit_value_change(
 @router.post("/approval-decision", response_model=MessageResponse)
 def audit_approval_decision(
     payload: CriticalActionRequest,
-    current_user: User = Depends(
-        require_permissions("estimate.approve", "purchase.approve")
-    ),
+    current_user: User = Depends(require_permissions("estimate.approve", "purchase.approve")),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     register_audit(

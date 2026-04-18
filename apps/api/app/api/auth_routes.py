@@ -45,9 +45,7 @@ def _is_expired(value: datetime) -> bool:
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
-    if not user or not user.is_active or not verify_password(
-        payload.password, user.password_hash
-    ):
+    if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais inválidas",
@@ -140,9 +138,7 @@ def forgot_password(
         db.commit()
 
     return ForgotPasswordResponse(
-        detail=(
-            "Se o e-mail existir, enviaremos um link de recuperação com validade limitada."
-        )
+        detail=("Se o e-mail existir, enviaremos um link de recuperação com validade limitada.")
     )
 
 
