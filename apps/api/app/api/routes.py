@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.auth_routes import router as auth_router
 from app.api.critical_actions_routes import router as critical_actions_router
+from app.api.state_machine_routes import router as state_machine_router
 from app.schemas.health import HealthResponse
 
 router = APIRouter()
@@ -14,3 +15,4 @@ def healthcheck() -> HealthResponse:
 
 router.include_router(auth_router)
 router.include_router(critical_actions_router)
+router.include_router(state_machine_router)

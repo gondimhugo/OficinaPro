@@ -20,6 +20,7 @@ from app.models.entities import (
     Role,
     RolePermission,
     ServiceRequest,
+    StateTransitionEvent,
     StockItem,
     StockMovement,
     User,
@@ -62,4 +63,5 @@ __all__ = [
     "Attachment",
     "AuditLog",
     "Notification",
+    "StateTransitionEvent",
 ]
