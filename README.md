@@ -168,3 +168,38 @@ Pipeline em `.github/workflows/ci.yml` com dois jobs:
 
 - `frontend`: install, lint, test, build dos workspaces Next.js.
 - `backend`: install, ruff, black e pytest da API.
+
+## Deploy no Vercel
+
+Este monorepo tem **duas** aplicações Next.js. Cada uma deve ser um **projeto
+Vercel separado**, apontando para a pasta correspondente.
+
+### Passo a passo
+
+1. Em **Add New Project**, importe o repositório `gondimhugo/oficinapro`.
+2. Em **Configure Project → Root Directory**, clique em *Edit* e selecione:
+   - `apps/admin-web` para o painel interno, **ou**
+   - `apps/client-portal` para o portal do cliente.
+3. O framework será detectado como **Next.js** automaticamente. Os arquivos
+   `apps/<app>/vercel.json` já definem:
+   - `installCommand`: instala workspaces a partir da raiz do monorepo.
+   - `buildCommand`: roda `npm run build` do workspace correto.
+   - `outputDirectory`: `.next`.
+4. Em **Environment Variables**, configure:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - (opcional, só server-side) `SUPABASE_SERVICE_ROLE_KEY`
+
+   A integração Supabase ↔ Vercel preenche as duas primeiras automaticamente.
+5. Clique em **Deploy**. Repita o processo criando um segundo projeto Vercel
+   para o outro app.
+
+### Observações
+
+- `next.config.ts` usa `output: "standalone"` **apenas** quando
+  `BUILD_STANDALONE=1` (configurado nos `Dockerfile`s). No Vercel, esse flag
+  fica desligado, então o build usa a saída padrão esperada pela Vercel.
+- `outputFileTracingRoot` aponta para a raiz do monorepo para que o Next
+  encontre o `node_modules` com hoisting de workspaces.
+- Branch de produção recomendada: `main`. Pull requests geram preview
+  deployments automaticamente.
