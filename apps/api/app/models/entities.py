@@ -407,6 +407,25 @@ class AuditLog(Base, AuditMixin):
     payload: Mapped[str | None] = mapped_column(Text)
 
 
+class StateTransitionEvent(Base, AuditMixin):
+    __tablename__ = "state_transition_events"
+    __table_args__ = (
+        Index("ix_state_transition_events_entity", "entity_type", "entity_id"),
+        Index("ix_state_transition_events_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_state: Mapped[str | None] = mapped_column(String(40))
+    to_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    event: Mapped[str] = mapped_column(String(60), nullable=False)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    actor_role: Mapped[str | None] = mapped_column(String(40))
+    correlation_id: Mapped[str | None] = mapped_column(String(64))
+    context_json: Mapped[str | None] = mapped_column(Text)
+
+
 class Notification(Base, AuditMixin):
     __tablename__ = "notifications"
     __table_args__ = (

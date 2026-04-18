@@ -208,6 +208,73 @@ def register_real_consumption(context: MutableMapping[str, object]) -> None:
     step_consumptions.append({"step_id": step_id, "consumed_qty": consumed_qty})
 
 
+def must_have_customer_and_complaint(context: Mapping[str, object]) -> bool:
+    return bool(context.get("has_customer") and context.get("complaint_registered"))
+
+
+def must_have_diagnosis(context: Mapping[str, object]) -> bool:
+    return bool(context.get("diagnosis_completed"))
+
+
+def must_have_approved_budget_and_no_pending_parts(
+    context: Mapping[str, object],
+) -> bool:
+    if not context.get("budget_approved"):
+        return False
+    return not bool(context.get("has_pending_parts"))
+
+
+def must_have_no_pending_parts(context: Mapping[str, object]) -> bool:
+    return not bool(context.get("has_pending_parts"))
+
+
+def must_have_quality_checklist(context: Mapping[str, object]) -> bool:
+    return bool(context.get("quality_checklist_ok"))
+
+
+def must_have_delivery_confirmed(context: Mapping[str, object]) -> bool:
+    return bool(context.get("delivery_confirmed"))
+
+
+def must_have_billing_closed(context: Mapping[str, object]) -> bool:
+    return bool(context.get("billing_closed"))
+
+
+def mark_orcamento_linked(context: MutableMapping[str, object]) -> None:
+    context["orcamento_created"] = True
+
+
+def atendimento_validator() -> TransitionValidator:
+    """Fluxo de Atendimento: aberto -> em_avaliacao -> convertido/cancelado."""
+
+    rules: Dict[Tuple[str, str], TransitionRule] = {
+        ("aberto", "em_avaliacao"): TransitionRule(
+            event="iniciar_avaliacao",
+            allowed_profiles=("atendimento", "consultor", "admin"),
+            preconditions=(must_have_customer_and_complaint,),
+            side_effects=(mark_portal_sync,),
+        ),
+        ("em_avaliacao", "convertido"): TransitionRule(
+            event="converter_em_orcamento",
+            allowed_profiles=("atendimento", "orcamentista", "admin"),
+            preconditions=(must_have_diagnosis,),
+            postconditions=(mark_orcamento_linked,),
+            side_effects=(mark_notification, mark_portal_sync),
+        ),
+        ("aberto", "cancelado"): TransitionRule(
+            event="cancelar_atendimento",
+            allowed_profiles=("atendimento", "supervisor", "admin"),
+            side_effects=(mark_notification, mark_portal_sync),
+        ),
+        ("em_avaliacao", "cancelado"): TransitionRule(
+            event="cancelar_atendimento",
+            allowed_profiles=("atendimento", "supervisor", "admin"),
+            side_effects=(mark_notification, mark_portal_sync),
+        ),
+    }
+    return TransitionValidator(entity_name="Atendimento", rules=rules)
+
+
 def budget_validator() -> TransitionValidator:
     rules: Dict[Tuple[str, str], TransitionRule] = {
         ("RASCUNHO", "ENVIADO"): TransitionRule(
@@ -392,3 +459,130 @@ def reconcile_inventory(
         )
 
     return result
+
+
+def auto_block_on_pending_part(
+    *,
+    os_state: str,
+    context: MutableMapping[str, object],
+    validator: TransitionValidator | None = None,
+    profile: str = "sistema",
+) -> str:
+    """Bloqueio automático de OS em execução quando há peça pendente.
+
+    Quando `has_pending_parts` é verdadeiro e a OS está em execução, dispara
+    automaticamente a transição `bloquear_por_peca`, retornando o novo estado.
+    """
+
+    if not context.get("has_pending_parts"):
+        return os_state
+    if os_state != "em_execucao":
+        return os_state
+
+    validator = validator or os_validator_v2()
+    allowed_profiles = set(
+        validator.rules[("em_execucao", "bloqueada_peca")].allowed_profiles
+    )
+    effective_profile = profile if profile in allowed_profiles else "sistema"
+
+    validator.apply(
+        current_state="em_execucao",
+        target_state="bloqueada_peca",
+        event="bloquear_por_peca",
+        profile=effective_profile,
+        context=context,
+    )
+    return "bloqueada_peca"
+
+
+def os_validator_v2() -> TransitionValidator:
+    """Validador de OS alinhado aos enums oficiais (minúsculos)."""
+
+    common_side_effects: Iterable[Hook] = (mark_notification, mark_portal_sync)
+
+    rules: Dict[Tuple[str, str], TransitionRule] = {
+        ("aberta", "em_execucao"): TransitionRule(
+            event="iniciar_execucao",
+            allowed_profiles=("tecnico", "supervisor", "admin"),
+            preconditions=(must_have_approved_budget_and_no_pending_parts,),
+            side_effects=tuple(common_side_effects),
+        ),
+        ("em_execucao", "bloqueada_peca"): TransitionRule(
+            event="bloquear_por_peca",
+            allowed_profiles=("tecnico", "compras", "supervisor", "admin", "sistema"),
+            side_effects=tuple(common_side_effects),
+        ),
+        ("bloqueada_peca", "em_execucao"): TransitionRule(
+            event="retomar_apos_peca",
+            allowed_profiles=("compras", "supervisor", "admin"),
+            preconditions=(must_have_no_pending_parts,),
+            side_effects=tuple(common_side_effects),
+        ),
+        ("em_execucao", "qualidade"): TransitionRule(
+            event="enviar_para_qualidade",
+            allowed_profiles=("tecnico", "supervisor", "admin"),
+            preconditions=(must_have_no_pending_parts,),
+            side_effects=tuple(common_side_effects),
+        ),
+        ("qualidade", "em_execucao"): TransitionRule(
+            event="reprovar_qualidade",
+            allowed_profiles=("qualidade", "supervisor", "admin"),
+            side_effects=tuple(common_side_effects),
+        ),
+        ("qualidade", "pronta_entrega"): TransitionRule(
+            event="aprovar_qualidade",
+            allowed_profiles=("qualidade", "supervisor", "admin"),
+            preconditions=(must_have_quality_checklist,),
+            side_effects=tuple(common_side_effects),
+        ),
+        ("pronta_entrega", "entregue"): TransitionRule(
+            event="entregar_os",
+            allowed_profiles=("atendimento", "supervisor", "admin"),
+            preconditions=(must_have_delivery_confirmed,),
+            side_effects=tuple(common_side_effects),
+        ),
+        ("entregue", "encerrada"): TransitionRule(
+            event="encerrar_os",
+            allowed_profiles=("atendimento", "financeiro", "admin"),
+            preconditions=(must_have_billing_closed,),
+            side_effects=tuple(common_side_effects),
+        ),
+    }
+    return TransitionValidator(entity_name="OS", rules=rules)
+
+
+def orcamento_validator_v2() -> TransitionValidator:
+    """Validador de Orçamento alinhado aos enums oficiais (minúsculos)."""
+
+    rules: Dict[Tuple[str, str], TransitionRule] = {
+        ("rascunho", "enviado"): TransitionRule(
+            event="enviar_orcamento",
+            allowed_profiles=("atendimento", "vendedor", "admin"),
+            preconditions=(must_have_items_and_customer,),
+            postconditions=(mark_notification,),
+            side_effects=(mark_portal_sync,),
+        ),
+        ("enviado", "aprovado"): TransitionRule(
+            event="aprovar_orcamento",
+            allowed_profiles=("cliente", "atendimento", "admin"),
+            side_effects=(mark_notification, mark_portal_sync),
+        ),
+        ("enviado", "rejeitado"): TransitionRule(
+            event="rejeitar_orcamento",
+            allowed_profiles=("cliente", "atendimento", "admin"),
+            side_effects=(mark_notification, mark_portal_sync),
+        ),
+        ("enviado", "expirado"): TransitionRule(
+            event="expirar_orcamento",
+            allowed_profiles=("sistema", "admin"),
+            side_effects=(mark_notification, mark_portal_sync),
+        ),
+        ("aprovado", "convertido"): TransitionRule(
+            event="converter_em_os",
+            allowed_profiles=("atendimento", "planejador", "admin"),
+            preconditions=(must_have_budget_approved,),
+            postconditions=(mark_os_created,),
+            side_effects=(mark_notification, mark_portal_sync),
+        ),
+    }
+    return TransitionValidator(entity_name="Orçamento", rules=rules)

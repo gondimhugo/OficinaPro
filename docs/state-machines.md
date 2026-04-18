@@ -1,5 +1,25 @@
 # Diagrama de estados e regras de transição
 
+## 0) Atendimento
+
+```mermaid
+stateDiagram-v2
+    [*] --> aberto
+    aberto --> em_avaliacao: iniciar_avaliacao
+    em_avaliacao --> convertido: converter_em_orcamento
+    aberto --> cancelado: cancelar_atendimento
+    em_avaliacao --> cancelado: cancelar_atendimento
+```
+
+### Matriz de transições de Atendimento
+
+| De | Para | Evento disparador | Perfis autorizados | Pré-condições | Pós-condições | Side effects |
+|---|---|---|---|---|---|---|
+| aberto | em_avaliacao | `iniciar_avaliacao` | atendimento, consultor, admin | cliente vinculado e queixa registrada | status atualizado | atualizar portal |
+| em_avaliacao | convertido | `converter_em_orcamento` | atendimento, orcamentista, admin | diagnóstico concluído | orçamento criado e vinculado | notificar cliente; atualizar portal |
+| aberto | cancelado | `cancelar_atendimento` | atendimento, supervisor, admin | justificativa registrada | status atualizado | notificar cliente; atualizar portal |
+| em_avaliacao | cancelado | `cancelar_atendimento` | atendimento, supervisor, admin | justificativa registrada | status atualizado | notificar cliente; atualizar portal |
+
 ## 1) Orçamento
 
 ```mermaid
@@ -69,6 +89,12 @@ stateDiagram-v2
 
 ## 3) Estratégia de validação central no backend
 
+> Observação: os diagramas 0/1/2 acima são expostos em código como enums em
+> `backend/state_enums.py` (`AtendimentoState`, `OrcamentoState`, `OSState`). O
+> serviço de domínio vive em `apps/api/app/services/state_machine.py` e delega a
+> validação para os `TransitionValidator` em `backend/state_transitions.py`.
+
+
 - Criar um componente único de domínio (ex.: `TransitionValidator`) para validar **toda** alteração de status.
 - API não altera estado diretamente: ela chama o validador com `(entidade, estado_atual, estado_destino, evento, perfil, contexto)`.
 - O validador bloqueia transições inválidas quando:
@@ -83,6 +109,36 @@ stateDiagram-v2
   - dispara side effects de notificação e atualização de portal.
 
 Esse padrão centraliza regra de negócio e evita inconsistências entre diferentes endpoints da API.
+
+### Regras de negócio aplicadas pelo serviço de domínio
+
+- OS só pode ser criada (estado `aberta`) a partir de orçamento com status `aprovado`.
+- Transição `aberta -> em_execucao` exige orçamento aprovado e **nenhuma peça pendente**.
+- Entrada em execução com `has_pending_parts=true` dispara **bloqueio automático** para `bloqueada_peca`.
+- Saída de `bloqueada_peca` exige `has_pending_parts=false`.
+- Envio à qualidade exige ausência de peças pendentes.
+- Aprovação de qualidade exige checklist OK (`quality_checklist_ok=true`).
+- Entrega exige agendamento confirmado (`delivery_confirmed=true`).
+- Encerramento exige faturamento concluído (`billing_closed=true`).
+
+### Endpoints REST
+
+- `POST /api/v1/state-machine/atendimentos/{id}/transitions`
+- `POST /api/v1/state-machine/orcamentos/{id}/transitions`
+- `POST /api/v1/state-machine/os/{id}/transitions`
+- `GET  /api/v1/state-machine/{atendimento|orcamento|os}/{id}/events` — histórico de eventos de estado.
+
+Payload de transição:
+
+```json
+{
+  "target_state": "em_execucao",
+  "event": "iniciar_execucao",
+  "profile": "supervisor",
+  "context": {"budget_approved": true, "has_pending_parts": false},
+  "correlation_id": "req-123"
+}
+```
 
 
 ## 4) Ciclo de vida de item vinculado à OS
