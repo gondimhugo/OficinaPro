@@ -51,10 +51,7 @@ def _prepare_db() -> tuple[sessionmaker, Session]:
     db.flush()
 
     db.add(UserRole(user_id=1, role_id=1))
-    db.add_all(
-        RolePermission(role_id=1, permission_id=permission.id)
-        for permission in permissions
-    )
+    db.add_all(RolePermission(role_id=1, permission_id=permission.id) for permission in permissions)
     db.commit()
 
     return local_session, db

@@ -6,10 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Mapping, MutableMapping
 
-from sqlalchemy.orm import Session
-
 from backend.audit import ImmutableAuditLogStore
-from backend.state_enums import EntityKind, TERMINAL_STATES
+from backend.state_enums import TERMINAL_STATES, EntityKind
 from backend.state_transitions import (
     TransitionError,
     TransitionValidator,
@@ -18,6 +16,7 @@ from backend.state_transitions import (
     orcamento_validator_v2,
     os_validator_v2,
 )
+from sqlalchemy.orm import Session
 
 from app.models.entities import (
     Estimate,

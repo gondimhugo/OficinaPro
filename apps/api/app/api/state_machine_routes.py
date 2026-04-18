@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from backend.state_enums import EntityKind
+from backend.state_transitions import (
+    PreconditionError,
+    TransitionError,
+    UnauthorizedProfileError,
+)
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -15,13 +21,6 @@ from app.services.state_machine import (
     StateMachineError,
     apply_transition,
     list_history,
-)
-
-from backend.state_enums import EntityKind
-from backend.state_transitions import (
-    PreconditionError,
-    TransitionError,
-    UnauthorizedProfileError,
 )
 
 router = APIRouter(prefix="/state-machine", tags=["state-machine"])
