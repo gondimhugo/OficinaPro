@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -22,7 +22,7 @@ http_bearer = HTTPBearer(auto_error=False)
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(UTC)
 
 
 def get_permission_codes(db: Session, user_id: int) -> set[str]:
